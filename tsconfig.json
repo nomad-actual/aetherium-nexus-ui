@@ -1,17 +1,31 @@
 {
   "compilerOptions": {
-    "jsx": "react",
-    "target": "es2016",
-    "module": "commonjs",
+    "target": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+
+
+    // "jsx": "react",
+    // "module": "commonjs",
     "esModuleInterop": true,
     "strict": true,
     "rootDir": "./src",
     "outDir": "dist",
     "moduleDetection": "force",
     "noImplicitOverride": true,
-    "isolatedModules": true,
-    "skipLibCheck": true,
-    "lib": ["es2023", "dom"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
   },
   "include": [
     "src",

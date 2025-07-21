@@ -1,60 +1,48 @@
 import React, { useState } from 'react';
-import { Button, Textarea } from 'rsc-daisyui';
 import { submitChat } from '../services/ai.client'
 import { AbortableAsyncIterator, ChatResponse } from 'ollama';
+import { IconArrowRight, IconSearch } from '@tabler/icons-react';
+import { ActionIcon, TextInput, useMantineTheme } from '@mantine/core';
 
 type ChatInputProps = {
-  onSendMessage: (message: string, chatResponse: Promise<AbortableAsyncIterator<ChatResponse>>) => any;
+  onSendMessage: (message: string, chatResponse: AbortableAsyncIterator<ChatResponse>) => any;
 }
 
 const ChatInput: React.FC<ChatInputProps> = (props: ChatInputProps) => {
+  const theme = useMantineTheme();
   const { onSendMessage } = props;
+
   const [message, setMessage] = useState<string>('');
 
-  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(event.target?.value || '');
-  };
-
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
+    console.log('clicked submit button')
     event.preventDefault();
     if (message.trim()) { // disable send
-      const response = submitChat(message);
 
       // spinner set?
+      const response = await submitChat(message);
+
       onSendMessage(message, response).catch((err: any) => console.error(err))
 
       setMessage('');
-
     }
   };
 
   return (
-      <div className="flex flex-row items-center px-5 mb-3 max-w-5xl mx-auto rounded-lg group">
-        <form onSubmit={handleSubmit}>
-          <Textarea
-            value={message}
-            onChange={handleChange}
-            placeholder="Present your message to the Void..."
-            rows={4}
-            style={{
-              padding: '10px',
-              border: '1px solid #ccc',
-              borderRadius: '5px',
-              resize: 'vertical',
-            }}
-          />
-
-          <Button type="submit" style={{
-              width: '100px',
-              height: '40px',
-              borderRadius: '5px',
-              backgroundColor: '#28a745',
-              border: '1px solid #ccc'
-            }}>
-              Send
-            </Button>
-        </form>
-    </div>
+    <TextInput
+      value={message}
+      onChange={(event) => setMessage(event.currentTarget.value)}
+      radius="xl"
+      size="md"
+      placeholder="Submit to the Void..."
+      rightSectionWidth={42}
+      leftSection={<IconSearch size={18} stroke={1.5} />}
+      rightSection={
+        <ActionIcon size={32} radius="xl" color={theme.primaryColor} variant="filled">
+          <IconArrowRight size={18} stroke={1.5} onClick={handleSubmit}/>
+        </ActionIcon>
+      }
+    />
   );
 };
 
