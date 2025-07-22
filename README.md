@@ -22,13 +22,15 @@ Aetherium Nexus is a simple AI companion designed to help users with various tas
 - [x] Investigate wordiness vs openwebui (possibly just use ollama webui directly)
 - [x] choose better theme
 - [x] improve messaging content styling
+- [x] miserable ui performance on streaming (use effect?)
+- [x] user submitted messages don't show up until AI responding (perhaps same as ui performance - check useOptimistic state)
 
 ### Todo
 
-- [ ] miserable ui performance on streaming (use effect?)
-- [ ] user submitted messages don't show up until machine is responding
 - [ ] images in content
+- [ ] loading message placeholder
 - [ ] empty screen input
+- [ ] Chat container is way too complex. Need to reintroduce components and pass in states as props.
 - [ ] adjustable autoscrolling when approaching the bottom
 - [ ] be able to @model with autocomplete (show capabilities of all)
 - [ ] going back should keep browser state

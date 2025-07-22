@@ -9,7 +9,8 @@ export type ChatMessage = {
     buffer: string[],
     contents: MessageContent[]
     timestamp: Date
-    toolCall: ToolCall | null
+    toolCall: ToolCall | null,
+    stream: Promise<void> | null
 }
 
 

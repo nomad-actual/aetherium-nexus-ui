@@ -19,9 +19,11 @@ export type MessageProps = {
     message: ChatMessage
 }
 
+type CollapsedStateHolder = { [key: string]: boolean }
+
 const Message: React.FC<MessageProps> = (props: MessageProps) => {
     const { message } = props
-    const [collapsed, setCollapsed] = useState({} as any)
+    const [ collapsed, setCollapsed ] = useState<CollapsedStateHolder>({})
 
     const makeNewMessageContent = (
         type: 'text' | 'image',

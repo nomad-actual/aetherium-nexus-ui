@@ -1,25 +1,27 @@
 import React, { useState } from 'react'
 
-import ChatInput from './ChatInput'
 import { ChatMessage, MessageContent, Role } from '../types'
 import { AbortableAsyncIterator, ChatResponse, ToolCall } from 'ollama'
-import { makeToolCall, sendChat } from '../services/ai.client'
-import { AppShell, Stack } from '@mantine/core'
+import { makeToolCall, sendChat, submitChat } from '../services/ai.client'
+import { ActionIcon, AppShell, Center, Loader, Stack, TextInput, useMantineTheme } from '@mantine/core'
 import Message from './Message'
+import { IconArrowRight, IconSearch } from '@tabler/icons-react'
 
 const ChatContainer: React.FC = () => {
+    const theme = useMantineTheme();
     const [messages, setMessages] = useState<ChatMessage[]>([])
+    const [userMessage, setUserMessage] = useState<string>('');
+    const [loading, setLoading] = useState(false);
 
     const updateMessageByStream = async (
         message: ChatMessage,
         messagesToUpdate: ChatMessage[],
-        chatPromise: AbortableAsyncIterator<ChatResponse>
+        streamingIter: AbortableAsyncIterator<ChatResponse>
     ) => {
         const updatedMessages = [...messagesToUpdate]
 
         // pretty much always at the end so just start looking there
         const msgToUpdate = updatedMessages.findLast((m) => m.id === message.id)
-        const streamingResp = await chatPromise
 
         if (!msgToUpdate) {
             console.log('Could not find message to update')
@@ -28,7 +30,7 @@ const ChatContainer: React.FC = () => {
 
         let toolCalls: ToolCall[] = []
 
-        for await (const part of streamingResp) {
+        for await (const part of streamingIter) {
             msgToUpdate.buffer.unshift(part.message.content)
             
             // signifies intent to call a tool
@@ -102,33 +104,43 @@ const ChatContainer: React.FC = () => {
             author,
             timestamp: new Date(),
             toolCall: null,
+            stream: null,
         }
 
         return newMsg
     }
 
-    const handleSubmit = async (content: string, chatPromise: AbortableAsyncIterator<ChatResponse>) => {
-        
+    const handleSubmit = async (event: React.FormEvent) => {
+        event.preventDefault();
+        console.log('clicked submit button')
+
+        const inputFieldMessage = userMessage.trim()
+        if (!inputFieldMessage) {
+            return;
+        }
+
+
         // create user submission and update immediately
-        const userSubmit = appendMsg(content, 'user')
-        let newMessages = [
-            ...messages,
-            userSubmit
-        ]
-        setMessages(newMessages)
-        
+        const userSubmit = appendMsg(inputFieldMessage, 'user')
         const assistantResponse = appendMsg('', 'assistant')
-        newMessages = [
-            ...newMessages,
+
+        const newMessages = [
+            ...messages,
+            userSubmit,
             assistantResponse
         ]
 
+        setLoading(true);
+        setUserMessage('');
         setMessages([...newMessages])
 
         try {
+            const chatPromise = await submitChat([...messages, userSubmit]);
             await updateMessageByStream(assistantResponse, newMessages, chatPromise)
         } catch (error) {
             console.error('Error updating chat:', error)
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -140,6 +152,13 @@ const ChatContainer: React.FC = () => {
     })
 
 
+    const getActionIcon = () => {
+    if (loading) {
+      return (<Loader color="green" type="dots" size={18}/>)
+    }
+
+    return (<IconArrowRight size={18} stroke={1.5}/>)
+  }
 
     // if no messages, show the Chat Input in the middle
     // then transition downwards?
@@ -157,7 +176,33 @@ const ChatContainer: React.FC = () => {
 
 {/* if the messages are empty, do not show the footer. we'll be showing a different component instead */}
             <AppShell.Footer>
-                <ChatInput onSendMessage={handleSubmit} />
+                <Center>
+                    <TextInput
+                        disabled={loading}
+                        maw={'70%'}
+                        miw={'70%'}
+                        value={userMessage}
+                        onChange={(event) => setUserMessage(event.currentTarget.value)}
+                        radius="xl"
+                        size="lg"
+                        p={"lg"}
+                        placeholder="Submit to the Void..."
+                        rightSectionWidth={42}
+                        leftSection={<IconSearch size={18} stroke={1.5} />}
+                        rightSection={
+                            <ActionIcon
+                                size={32}
+                                radius="xl"
+                                color={theme.primaryColor}
+                                variant="filled"
+                                onClick={handleSubmit}
+                                disabled={!userMessage.trim() || loading}
+                            >
+                                {getActionIcon()}
+                            </ActionIcon>
+                        }
+                    />
+    </Center>
             </AppShell.Footer>
         </AppShell>
     )

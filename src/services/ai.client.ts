@@ -35,18 +35,15 @@ function getOllamaClient() {
     return ollamaClient
 }
 
-export async function submitChat(message: string) {
+export async function submitChat(messages: ChatMessage[]) {
     const ollamaClient = getOllamaClient()
     const ollamaTools = await getOllamaTools()
 
-    const messages = [{
-        role: 'user',
-        content: message,
-    }]
+    const ollamaMessageHistory = makeOllamaMessageHistory(messages)
 
     const iter = await ollamaClient.chat({
         model: LLM,
-        messages: messages,
+        messages: ollamaMessageHistory,
         stream: true,
         tools: ollamaTools
     })

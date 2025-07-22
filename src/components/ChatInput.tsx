@@ -53,7 +53,7 @@ const ChatInput: React.FC<ChatInputProps> = (props: ChatInputProps) => {
     <Center>
       <TextInput
         disabled={loading}
-        maw={'80%'}
+        maw={'70%'}
         miw={'70%'}
         value={message}
         onChange={(event) => setMessage(event.currentTarget.value)}
