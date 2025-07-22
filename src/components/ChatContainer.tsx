@@ -16,16 +16,17 @@ const ChatContainer: React.FC = () => {
         chatPromise: AbortableAsyncIterator<ChatResponse>
     ) => {
         const updatedMessages = [...messagesToUpdate]
-        const msgToUpdate = updatedMessages.find((m) => m.id === message.id)
+
+        // pretty much always at the end so just start looking there
+        const msgToUpdate = updatedMessages.findLast((m) => m.id === message.id)
         const streamingResp = await chatPromise
 
         if (!msgToUpdate) {
-            console.log('Could not find message to update', message.id)
+            console.log('Could not find message to update')
             return null
         }
 
         let toolCalls: ToolCall[] = []
-        setMessages([...updatedMessages])
 
         for await (const part of streamingResp) {
             msgToUpdate.buffer.unshift(part.message.content)
@@ -48,10 +49,18 @@ const ChatContainer: React.FC = () => {
 
         for (const toolCall of toolCalls) {
             console.log('making tool call', toolCall.function)
+
+            // this is not streamed by nature of it 
+            // really being just a web request design
             const toolResult = await makeToolCall(toolCall)
 
-            // because this isn't streamed, we just append it to the message contents
-            // I don't like it but it works for now
+            const toolMessageRequest: MessageContent = {
+                type: 'text',
+                content: '',
+                purpose: 'tool-request',
+                toolCall: toolCall,
+            }
+            
             const toolMessageContent: MessageContent = {
                 type: 'text',
                 content: toolResult.content,
@@ -59,32 +68,37 @@ const ChatContainer: React.FC = () => {
                 toolCall: toolCall,
             }
 
-            msgToUpdate.contents = [...msgToUpdate.contents, toolMessageContent]
-            // msgToUpdate.buffer.unshift(`<tool-result>${JSON.stringify(toolResult)}</tool-result>`)
+            msgToUpdate.contents = [
+                ...msgToUpdate.contents,
+                toolMessageRequest,
+                toolMessageContent
+            ]
 
             console.log('tool result', toolCall.function)
         }
 
-        setMessages([...updatedMessages])
+        const updatedCopy = [...updatedMessages]
+        setMessages(updatedCopy)
 
-        const toolPromise = await sendChat([...updatedMessages])
+        const toolPromise = await sendChat(updatedCopy)
         await updateMessageByStream(msgToUpdate, updatedMessages, toolPromise)
 
         return null
     }
 
     const appendMsg = (content: string, role: Role) => {
-        let id = crypto.randomUUID()
         const author = role === 'user' ? 'Spectre' : 'Lotus'
 
         const newMsg: ChatMessage = {
-            id,
+            id: crypto.randomUUID(),
             role,
             buffer: [],
-            rawContent: content,
-            contents: [
-                { type: 'text', content, purpose: 'chat', toolCall: null },
-            ],
+            contents: [{
+                type: 'text',
+                content,
+                purpose: 'chat',
+                toolCall: null
+            }],
             author,
             timestamp: new Date(),
             toolCall: null,
@@ -94,19 +108,25 @@ const ChatContainer: React.FC = () => {
     }
 
     const handleSubmit = async (content: string, chatPromise: AbortableAsyncIterator<ChatResponse>) => {
-        const newMessages = [
+        
+        // create user submission and update immediately
+        const userSubmit = appendMsg(content, 'user')
+        let newMessages = [
             ...messages,
-            appendMsg(content, 'user'),
-            appendMsg('', 'assistant'),
+            userSubmit
         ]
-
-        const nextUpdate = [...newMessages]
-        const toUpdate = nextUpdate[nextUpdate.length - 1]
+        setMessages(newMessages)
+        
+        const assistantResponse = appendMsg('', 'assistant')
+        newMessages = [
+            ...newMessages,
+            assistantResponse
+        ]
 
         setMessages([...newMessages])
 
         try {
-            await updateMessageByStream(toUpdate, newMessages, chatPromise)
+            await updateMessageByStream(assistantResponse, newMessages, chatPromise)
         } catch (error) {
             console.error('Error updating chat:', error)
         }
@@ -115,7 +135,7 @@ const ChatContainer: React.FC = () => {
 
     const rendered = (messages || []).map((message, index) => {
         return (
-            <Message key={index} num={index} message={message}/>
+            <Message key={index} message={message} />
         )
     })
 
@@ -124,16 +144,19 @@ const ChatContainer: React.FC = () => {
     // if no messages, show the Chat Input in the middle
     // then transition downwards?
     return (
-        <AppShell>
+        <AppShell padding="md" footer={{ height: 100 }}>
             <AppShell.Main>
-                <Stack>
+                <Stack
+                    h={"90%"}
+                    align='stretch'
+                    gap="xl"
+                >
                     {rendered}
                 </Stack>
             </AppShell.Main>
 
-            <AppShell.Footer
-                style={{padding: '50px' }}
-            >
+{/* if the messages are empty, do not show the footer. we'll be showing a different component instead */}
+            <AppShell.Footer>
                 <ChatInput onSendMessage={handleSubmit} />
             </AppShell.Footer>
         </AppShell>

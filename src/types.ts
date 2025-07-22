@@ -7,7 +7,6 @@ export type ChatMessage = {
     role: Role
     author: string
     buffer: string[],
-    rawContent: string
     contents: MessageContent[]
     timestamp: Date
     toolCall: ToolCall | null
@@ -18,7 +17,7 @@ export type ChatMessage = {
 
 export type MessageContent = {
     type: 'text' | 'image'
-    content: string // I assume image content can be converted to an image
-    purpose: 'chat' | 'tool-result' | 'thinking',
-    toolCall: ToolCall | null,
+    content: any
+    purpose: 'chat' | 'tool-request' | 'tool-result' | 'thinking'
+    toolCall: ToolCall | null
 }

@@ -1,17 +1,11 @@
-import { Ollama, Tool, ToolCall } from 'ollama'
+import { Message, Ollama, Tool, ToolCall } from 'ollama'
 import { getMcpClient } from './mcp.client'
 import { ChatMessage } from '../types'
 
 
-type OllamaMessage = {
-    role: string;
-    content: string;
-    tool_calls?: any;
-}
-
 let ollamaClient: Ollama | null = null
 
-const LLM = 'qwen3:14b'
+const LLM = 'qwen3:4b'
 
 async function getOllamaTools(): Promise<Tool[]> {
     const mcpClient = await getMcpClient()
@@ -48,7 +42,6 @@ export async function submitChat(message: string) {
     const messages = [{
         role: 'user',
         content: message,
-        tool_calls: []
     }]
 
     const iter = await ollamaClient.chat({
@@ -61,43 +54,95 @@ export async function submitChat(message: string) {
     return iter
 }
 
-function makeOllamaMessageHistory(messages: ChatMessage[]): OllamaMessage[] {
-    const history = messages.reduce((accumulator: OllamaMessage[], chatMessage: ChatMessage) => {
-        const contents: OllamaMessage[] = chatMessage.contents.map(msgContent => {
-            
-            // if this is a tool-result, we need to include the name of the tool it came from
-            const toolCallNames = []
-            if ( msgContent.toolCall?.function.name) {
-                toolCallNames.push({ name: msgContent.toolCall?.function.name })
+// omit the thinking responses
+// tool CALLs are role: assistant with the tools definition
+
+
+function formatToolResultCall(someContent: any) {
+    if (!Array.isArray(someContent)) return someContent
+
+    return someContent
+        .filter(content => content.type === 'text') // for now only text is supported
+        .reduce((contentAcc, contentCurr) => {
+            return `${contentAcc}\n\n${contentCurr.text}`
+        }, '')
+}
+
+
+function makeOllamaMessageHistory(messages: ChatMessage[]): Message[] {
+    console.log('start make ollama history', messages)
+
+    const validHistory: Message[] = messages.reduce((acc, cur) => {
+        const contents = cur.contents.reduce((contentAcc, contentCurr) => {
+            let msg: Message | null  = null
+
+            // I think all chats should be included
+            if (contentCurr.purpose === 'chat') {
+                
+                // check if content is actually present
+                if (contentCurr.content.trim()) {
+                    msg = {
+                        role: cur.role,
+                        content: contentCurr.content,
+                    }
+                }
+            }
+            else if (cur.role === 'assistant' && contentCurr.purpose === 'tool-request') {
+                msg = {
+                    role: 'assistant',
+                    content: '',
+                    tool_calls: contentCurr.toolCall ? [contentCurr.toolCall] : undefined
+                }
+            }
+            else if (cur.role === 'assistant' && contentCurr.purpose === 'tool-result') {
+                msg = {
+                    role: 'tool',
+                    content: formatToolResultCall(contentCurr.content),
+                    // ignored because the stupid library 
+                    // doesn't have it listed in its interfaces
+                    // @ts-ignore
+                    tool_name: contentCurr.toolCall?.function.name,
+                }
+            } else {
+                // there will definitely be missed amounts
+                console.log('ollama message ommitted')
             }
 
-            const role = msgContent.purpose === 'tool-result' ? 'tool' : chatMessage.role
-
-            return {
-                role,
-                content: msgContent.content,
-                tool_calls: toolCallNames
+            if (msg) {
+                return [...contentAcc, msg]
             }
-        })
 
-        return [...accumulator, ...contents]
-    }, [])
+            return [...contentAcc]
+        }, [] as Message[])
 
-    return history
+        return [...acc, ...contents]
+
+    }, [] as Message[])
+
+    console.log(validHistory)
+    return validHistory
 }
 
 export async function sendChat(messagesToUpdate: ChatMessage[]) {
     // build the history, consider omitting things like messages when making the history
-    const ollamaMessageHistory: OllamaMessage[] = makeOllamaMessageHistory(messagesToUpdate)
+    const ollamaMessageHistory: Message[] = makeOllamaMessageHistory(messagesToUpdate)
     
     console.log('ollama history:', ollamaMessageHistory)
-
     const ollamaTools = await getOllamaTools()
+
     const finalResp = getOllamaClient().chat({
         model: LLM,
         messages: ollamaMessageHistory,
         stream: true,
-        tools: ollamaTools
+        tools: ollamaTools,
+        options: {
+            // temperature: 0.6,
+            num_ctx: 32768,
+            // top_k: 20,
+            // top_p: 0.95,
+            // @ts-ignore
+            // min_p: 0,
+        }
     })
 
     return finalResp
@@ -105,7 +150,7 @@ export async function sendChat(messagesToUpdate: ChatMessage[]) {
 
 export type ToolCallResult = {
     role: 'tool',
-    content: string,
+    content: unknown,
     toolCall: ToolCall
 }
 
@@ -121,29 +166,9 @@ export async function makeToolCall(toolCall: ToolCall): Promise<ToolCallResult> 
         arguments: mcpFn.arguments,
     })
 
-    // this needs to be more robust because it won't always be a string
-    // in the case of pictures, then what
-    // consider returning a number of results instead of just one object
-
-    let toolContent = toolResp.content
-     
-    if (Array.isArray(toolContent)) {
-        toolContent = toolContent.reduce((acc, curr) => {
-            if (curr.type === 'text') {
-                return `${acc} \n ${curr.text}` // this should be better...
-            }
-            else if (curr.type === 'image') {
-                return `${acc} \n IMAGE PLACEHOLDER`
-            }
-            
-            return acc
-        }, '')
-     }
-
-
     return {
         role: 'tool',
-        content: toolContent as string,
+        content: toolResp.content,
         toolCall: toolCall,
     }
 }

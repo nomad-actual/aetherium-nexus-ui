@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { submitChat } from '../services/ai.client'
 import { AbortableAsyncIterator, ChatResponse } from 'ollama';
 import { IconArrowRight, IconSearch } from '@tabler/icons-react';
-import { ActionIcon, TextInput, useMantineTheme } from '@mantine/core';
+import { ActionIcon, Center, Loader, TextInput, useMantineTheme } from '@mantine/core';
 
 type ChatInputProps = {
   onSendMessage: (message: string, chatResponse: AbortableAsyncIterator<ChatResponse>) => any;
@@ -10,39 +10,73 @@ type ChatInputProps = {
 
 const ChatInput: React.FC<ChatInputProps> = (props: ChatInputProps) => {
   const theme = useMantineTheme();
+  const [message, setMessage] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+
+
   const { onSendMessage } = props;
 
-  const [message, setMessage] = useState<string>('');
 
   const handleSubmit = async (event: React.FormEvent) => {
     console.log('clicked submit button')
     event.preventDefault();
+
     if (message.trim()) { // disable send
 
       // spinner set?
-      const response = await submitChat(message);
+      try {
+        setLoading(true);
+        const response = await submitChat(message);
 
-      onSendMessage(message, response).catch((err: any) => console.error(err))
+        setMessage('');
 
-      setMessage('');
+        onSendMessage(message, response)
+          .catch((err: any) => console.error(err))
+          .finally(() => {
+            setLoading(false)
+          });
+      } catch(e) {
+        console.error('Error submitting chat:', e);
+      }
     }
   };
 
+  const getActionIcon = () => {
+    if (loading) {
+      return (<Loader color="green" type="dots" size={18}/>)
+    }
+
+    return (<IconArrowRight size={18} stroke={1.5}/>)
+  }
+
   return (
-    <TextInput
-      value={message}
-      onChange={(event) => setMessage(event.currentTarget.value)}
-      radius="xl"
-      size="md"
-      placeholder="Submit to the Void..."
-      rightSectionWidth={42}
-      leftSection={<IconSearch size={18} stroke={1.5} />}
-      rightSection={
-        <ActionIcon size={32} radius="xl" color={theme.primaryColor} variant="filled">
-          <IconArrowRight size={18} stroke={1.5} onClick={handleSubmit}/>
-        </ActionIcon>
-      }
-    />
+    <Center>
+      <TextInput
+        disabled={loading}
+        maw={'80%'}
+        miw={'70%'}
+        value={message}
+        onChange={(event) => setMessage(event.currentTarget.value)}
+        radius="xl"
+        size="lg"
+        p={"lg"}
+        placeholder="Submit to the Void..."
+        rightSectionWidth={42}
+        leftSection={<IconSearch size={18} stroke={1.5} />}
+        rightSection={
+          <ActionIcon
+            size={32}
+            radius="xl"
+            color={theme.primaryColor}
+            variant="filled"
+            onClick={handleSubmit}
+            disabled={!message.trim() || loading}
+          >
+            {getActionIcon()}
+          </ActionIcon>
+        }
+      />
+    </Center>
   );
 };
 
