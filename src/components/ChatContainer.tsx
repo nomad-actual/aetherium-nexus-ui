@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 
 import { ChatMessage, MessageContent, Role } from '../types'
 import { AbortableAsyncIterator, ChatResponse, ToolCall } from 'ollama'
@@ -10,7 +10,8 @@ import { IconArrowRight, IconSearch } from '@tabler/icons-react'
 const ChatContainer: React.FC = () => {
     const theme = useMantineTheme();
     const [messages, setMessages] = useState<ChatMessage[]>([])
-    const [userMessage, setUserMessage] = useState<string>('');
+    const [updatingMessage, setUpdatingMessage] = useState<ChatMessage | null>(null)
+    const [userInputContent, setUserMessage] = useState<string>('');
     const [loading, setLoading] = useState(false);
 
     const updateMessageByStream = async (
@@ -20,8 +21,14 @@ const ChatContainer: React.FC = () => {
     ) => {
         const updatedMessages = [...messagesToUpdate]
 
+
         // pretty much always at the end so just start looking there
         const msgToUpdate = updatedMessages.findLast((m) => m.id === message.id)
+        if (!msgToUpdate) {
+            throw new Error('Could not find message to update')
+        }
+
+        setUpdatingMessage(msgToUpdate)
 
         if (!msgToUpdate) {
             console.log('Could not find message to update')
@@ -40,30 +47,35 @@ const ChatContainer: React.FC = () => {
                 toolCalls = [...toolCalls, ...part.message.tool_calls]
             }
 
-            // push updates as we get them
-            setMessages([...updatedMessages])
+            // instead of setting ALL messages. I could just update the one in question...
+
+            // setMessages([...updatedMessages])
+            setUpdatingMessage({ ...msgToUpdate, buffer: msgToUpdate.buffer })
         }
 
         if (toolCalls && toolCalls.length === 0) {
             console.log('no tool calls found, returning')
+            setUpdatingMessage(null)
             return null
         }
 
         for (const toolCall of toolCalls) {
             console.log('making tool call', toolCall.function)
 
-            // this is not streamed by nature of it 
-            // really being just a web request design
+            // todo set Message status to loading tool (and which tool is being)
+            // called.
+
+            // this is not streamed because it's really just a web request
             const toolResult = await makeToolCall(toolCall)
 
-            const toolMessageRequest: MessageContent = {
+            const toolRequest: MessageContent = {
                 type: 'text',
                 content: '',
                 purpose: 'tool-request',
                 toolCall: toolCall,
             }
             
-            const toolMessageContent: MessageContent = {
+            const toolResults: MessageContent = {
                 type: 'text',
                 content: toolResult.content,
                 purpose: 'tool-result',
@@ -72,8 +84,8 @@ const ChatContainer: React.FC = () => {
 
             msgToUpdate.contents = [
                 ...msgToUpdate.contents,
-                toolMessageRequest,
-                toolMessageContent
+                toolRequest,
+                toolResults
             ]
 
             console.log('tool result', toolCall.function)
@@ -85,6 +97,7 @@ const ChatContainer: React.FC = () => {
         const toolPromise = await sendChat(updatedCopy)
         await updateMessageByStream(msgToUpdate, updatedMessages, toolPromise)
 
+        setUpdatingMessage(null)
         return null
     }
 
@@ -112,9 +125,9 @@ const ChatContainer: React.FC = () => {
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
-        console.log('clicked submit button')
+        console.log('user clicked submit button')
 
-        const inputFieldMessage = userMessage.trim()
+        const inputFieldMessage = userInputContent.trim()
         if (!inputFieldMessage) {
             return;
         }
@@ -141,13 +154,16 @@ const ChatContainer: React.FC = () => {
             console.error('Error updating chat:', error)
         } finally {
             setLoading(false)
+            setUpdatingMessage(null)
         }
     }
 
 
     const rendered = (messages || []).map((message, index) => {
+        const isGenerating = message.id === updatingMessage?.id
+
         return (
-            <Message key={index} message={message} />
+            <Message key={index} message={message} isGenerating={isGenerating}/>
         )
     })
 
@@ -181,12 +197,12 @@ const ChatContainer: React.FC = () => {
                         disabled={loading}
                         maw={'70%'}
                         miw={'70%'}
-                        value={userMessage}
+                        value={userInputContent}
                         onChange={(event) => setUserMessage(event.currentTarget.value)}
                         radius="xl"
                         size="lg"
                         p={"lg"}
-                        placeholder="Submit to the Void..."
+                        placeholder="Ask the Void if you dare..."
                         rightSectionWidth={42}
                         leftSection={<IconSearch size={18} stroke={1.5} />}
                         rightSection={
@@ -196,7 +212,7 @@ const ChatContainer: React.FC = () => {
                                 color={theme.primaryColor}
                                 variant="filled"
                                 onClick={handleSubmit}
-                                disabled={!userMessage.trim() || loading}
+                                disabled={!userInputContent.trim() || loading}
                             >
                                 {getActionIcon()}
                             </ActionIcon>

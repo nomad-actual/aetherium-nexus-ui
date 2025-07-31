@@ -133,12 +133,7 @@ export async function sendChat(messagesToUpdate: ChatMessage[]) {
         stream: true,
         tools: ollamaTools,
         options: {
-            // temperature: 0.6,
             num_ctx: 32768,
-            // top_k: 20,
-            // top_p: 0.95,
-            // @ts-ignore
-            // min_p: 0,
         }
     })
 

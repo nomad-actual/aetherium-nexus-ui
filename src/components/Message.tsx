@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { MessageContent, type ChatMessage } from '../types'
 import {
     Text,
@@ -6,24 +6,39 @@ import {
     Box,
     Group,
     Button,
-    Code,
     SimpleGrid,
     Space,
     Divider,
+    Image,
 } from '@mantine/core'
 import { randomId } from '@mantine/hooks'
-import { ToolCall } from 'ollama'
 import Markdown from 'react-markdown'
+import { Carousel } from '@mantine/carousel'
+import { ToolCall } from 'ollama'
+import CodeMirror from '@uiw/react-codemirror'
+import rehypeExternalLinks from 'rehype-external-links'
 
 export type MessageProps = {
-    message: ChatMessage
+    message: ChatMessage,
+    isGenerating: boolean,
 }
 
 type CollapsedStateHolder = { [key: string]: boolean }
 
 const Message: React.FC<MessageProps> = (props: MessageProps) => {
-    const { message } = props
-    const [ collapsed, setCollapsed ] = useState<CollapsedStateHolder>({})
+    const { message, isGenerating } = props
+    const [collapsed, setCollapsed] = useState<CollapsedStateHolder>({})
+    const refContainer = useRef(null)
+
+    useEffect(() => {
+        // really we need to snap every new user message to the bottom
+        const isAtBottom = window.innerHeight + window.scrollY >= (document.body.offsetHeight - 500)
+
+        if (isGenerating && isAtBottom) {
+            // @ts-ignore
+            refContainer.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
+    })
 
     const makeNewMessageContent = (
         type: 'text' | 'image',
@@ -41,30 +56,18 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
     function processToken() {
         let token
 
+        // todo this sucks...perhaps this can push to an async queue instead?
         while ((token = message.buffer.pop())) {
-            if (!token) return
+            // search for tags
+            // if none, append to the last messageContent we have
 
             if (token[0] === '<') {
                 // likely processing a tag, so let's look for the end of it
 
+                // we should fail this if it goes more than like 20characters
                 const endIndex = token.indexOf('>')
                 const tag = token.substring(0, endIndex + 1)
 
-                // if (tag === '<tool-result>') {
-                //     const toolResultRaw = token
-                //         .replace('<tool-result>', '')
-                //         .replace('</tool-result>', '')
-
-                //     const toolCallResult: ToolCallResult = JSON.parse(toolResultRaw)
-
-                //     // we make the block all at once
-                //     const toolBlock = {
-                //         ...makeNewMessageContent('text', 'tool-result'),
-                //         content: toolCallResult.content,
-                //         toolCall: toolCallResult.toolCall
-                //     }
-                //     message.contents = [...message.contents, toolBlock]
-                // } else if (tag === '<response>') {
                 if (tag === '<response>') {
                     // there can only be one response per message at this time
                     const newTextChat = makeNewMessageContent('text', 'chat')
@@ -97,7 +100,7 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
             }
         }
 
-        return <></>
+        return null
     }
 
     function toggleCollapse(key: number) {
@@ -105,31 +108,105 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
         else setCollapsed({ ...collapsed, [key]: false })
     }
 
-    function renderToolResultContent(toolContent: string | object[]) {
+    function renderToolTextResultContent(toolContent: string | object[]) {
         if (!Array.isArray(toolContent)) {
             return toolContent
         }
+
+        return toolContent
+            // .filter((c: any) => c.type === 'text')
+            .reduce((acc, content: any) => {
+                // ideally we don't stringify EVERYTHING
+
+                if (content.type === 'text') {
+                    return `${acc}${JSON.stringify(content, null, 2)}\n`
+                } else if (content.type === 'image') {
+                    const fakeImage = JSON.stringify({
+                        type: 'image',
+                        mimeType: content.mimeType,
+                        data: 'IMAGE ATTACHED BELOW',
+                        annotations: content.annotations || {},
+                    })
+                    return `${acc}${fakeImage}\n`
+                }
+
+                // todo add other mcp supported types here
+
+                return `${acc}${JSON.stringify(content, null, 2)}\n`
+            }, '')
 
         // going to need to render the ACTUAL text results here
 
         // images will need to be rendered as images in the normal assistant chat response
 
-        return toolContent.reduce((acc: string, content: any) => {
-            if (content.type === 'text') {
-                return `${acc}\n${content.text}\n`
-            }
-            if (content.type === 'image') {
-                return `${acc}\n\n IMAGE PLACEHOLDER`
-            }
+        // return toolContent
+        //     // .filter((content: any) => content.type === 'text')
+        //     .reduce((acc: string, content: any) => {
+        
 
-            return acc
-        }, '')
+        //         // not great but at least it's here
+        //         const unsupported = JSON.stringify({
+        //             type: content.type,
+        //             data: 'UNSUPPORTED MEDIA (TEXT AND IMAGES ONLY)',
+        //         })
+
+        //         return `${acc}${unsupported}\n`
+        //     }, '')
+    }
+
+    // only images are supported for now
+    function renderToolMedia(toolContent: string | object[]) {
+        if (!Array.isArray(toolContent)) {
+            return toolContent
+        }
+
+        const supportedMedia = toolContent.filter(
+            (content: any) => content.type === 'image'
+        )
+        if (supportedMedia.length === 0) {
+            return null
+        }
+
+        const images = supportedMedia.map((imageContent: any) => {
+            const mimeType = imageContent.mimeType || 'image/jpeg'
+            const data = imageContent.data || ''
+            const base64Data = `data:${mimeType};base64,${data}`
+
+            return (
+                <Carousel.Slide key={randomId()}>
+                    <Image
+                        radius="md"
+                        src={base64Data}
+                        h={470}
+                        w="auto"
+                        fit="contain"
+                    />
+                </Carousel.Slide>
+            )
+        })
+
+        return (
+            <>
+                <Space h={'lg'} />
+                <Carousel
+                    slideSize={'auto'}
+                    height={500}
+                    slideGap="md"
+                    controlsOffset="md"
+                    controlSize={45}
+                    withControls
+                    withIndicators
+                >
+                    {images}
+                </Carousel>
+            </>
+        )
     }
 
     function renderFormatted() {
         if (message.role === 'user') {
             return (
-                <Box key={randomId()} maw={'100%'}>
+                <Box key={randomId()} maw={'100%'} style={{scrollMarginBottom: '200px'}} ref={refContainer}>
                     <Group justify="flex-end">
                         <Markdown>{message.contents[0]?.content}</Markdown>
                     </Group>
@@ -147,7 +224,7 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
                 return (
                     <Box pl={20} key={key}>
                         <Group justify="flex-start" align="left">
-                            <Button 
+                            <Button
                                 miw={'250px'}
                                 color="gray"
                                 onClick={() => toggleCollapse(key)}
@@ -158,18 +235,22 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
                         </Group>
 
                         <Collapse in={collapsed[key]}>
-                            <Text>
-                                {msgContent.content}
-                            </Text>
+                            <Text>{msgContent.content}</Text>
                         </Collapse>
-                        <Space/>
+                        <Space />
                     </Box>
                 )
             } else if (purpose === 'tool-result') {
+                const toolResults = `Params:\n${
+                    JSON.stringify(msgContent.toolCall?.function.arguments)
+                }\n\nResult:\n${
+                    renderToolTextResultContent(msgContent.content)
+                }`
+
                 return (
                     <Box pl={20} key={key}>
                         <Group justify="flex-start" align="left">
-                            <Button 
+                            <Button
                                 miw={'250px'}
                                 color="green"
                                 onClick={() => toggleCollapse(key)}
@@ -177,32 +258,38 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
                                 {`${msgContent.toolCall?.function.name} Results`}
                             </Button>
                         </Group>
+
                         <Collapse in={collapsed[key]}>
-                            <Code block>
-                                {`Params:\n${
-                                    JSON.stringify(msgContent.toolCall?.function.arguments)
-                                }\n\nResult:${
-                                    renderToolResultContent(msgContent.content)
-                                }`}
-                            </Code>
+                            <CodeMirror
+                                value={toolResults}
+                                contentEditable='false'
+                                placeholder=""
+                                // height="200px"
+                                editable={false}
+                                readOnly={true}
+                                theme={'dark'}
+                            />
                         </Collapse>
-                        <Space/>
+
+                        {renderToolMedia(msgContent.content)}
+                        {/* <Space h={"xl"}/> */}
                     </Box>
                 )
-            } else {
-                <Box key={key}>
-                    <Text>{msgContent.content || 'none'}</Text>
-                </Box>
             }
 
             if (!msgContent.content.trim()) {
-                return null;
+                return null
             }
 
             return (
-                <Box key={key} p={'xl'}>
-                    <Space h={"md"}/>
-                    <Markdown>{msgContent.content || 'none2'}</Markdown>
+                <Box key={key} p={'xl'} style={{scrollMarginBottom: '200px'}} ref={refContainer}>
+                    <Space h={'md'} />
+                    <Markdown
+                        rehypePlugins={[
+                            [rehypeExternalLinks, { target: '_blank', rel: ['noopener noreferrer'] }]
+                        ]}
+
+                    >{msgContent.content || 'none2'}</Markdown>
                 </Box>
             )
         })
@@ -213,26 +300,34 @@ const Message: React.FC<MessageProps> = (props: MessageProps) => {
     const justifyDir = message.role === 'user' ? 'right' : 'left'
     const justify = message.role === 'user' ? 'flex-end' : 'flex-start'
 
+    // not sure if I should keep this here or not...
+    // passing stuff down to the message component
+    // is proper but do streaming updates work this way?
+    // should I instead useEffect or some context?
+    processToken()
+
+    // should instead be used down below
+    const headerText = `${message.author} - ${message.timestamp.toLocaleTimeString()}`
+
+    const backgroundColor = message.role === 'user' ? 'var(--mantine-color-dark-6)' : ''
+    const borders = message.role === 'user' ? '1px solid var(--mantine-color-dark-5)' : ''
 
     return (
         <Group
             align="center"
             justify={justifyDir}
             p="sm"
-            bd={'1px solid var(--mantine-color-dark-5)'}
-            bg={'var(--mantine-color-dark-6)'}
+            bd={borders}
+            bg={backgroundColor}
             bdrs={'sm'}
             mr={marginRight}
             ml={marginLeft}
         >
-            {/* need a hook somehow instead */}
-            {processToken()}
-
             <SimpleGrid cols={1} w={'100%'}>
                 <Box>
-                    <Group justify={justify}align={justifyDir}>
-                        <Text>{message.author} - {message.timestamp.toLocaleTimeString()}</Text>
-                        <Divider w={'100%'}/>
+                    <Group justify={justify} align={justifyDir}>
+                        <Text>{headerText}</Text>
+                        <Divider w={'100%'} />
                     </Group>
                 </Box>
 
