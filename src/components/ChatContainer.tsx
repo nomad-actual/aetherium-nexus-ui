@@ -202,7 +202,7 @@ const ChatContainer: React.FC = () => {
                         radius="xl"
                         size="lg"
                         p={"lg"}
-                        placeholder="Ask the Void if you dare..."
+                        placeholder="The answer is out there. Let's find it."
                         rightSectionWidth={42}
                         leftSection={<IconSearch size={18} stroke={1.5} />}
                         rightSection={

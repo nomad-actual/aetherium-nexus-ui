@@ -54,7 +54,6 @@ export async function submitChat(messages: ChatMessage[]) {
 // omit the thinking responses
 // tool CALLs are role: assistant with the tools definition
 
-
 function formatToolResultCall(someContent: any) {
     if (!Array.isArray(someContent)) return someContent
 
